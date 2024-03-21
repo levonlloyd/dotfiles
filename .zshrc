@@ -58,7 +58,13 @@ source ~/Development/config_files/square/aliases
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 source /opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
-alias ls=colorls
+
+# exa for ls
+alias ls="exa"
+alias ll="exa -alh"
+alias tree="exa --tree"
+
+alias cat="bat"
 
  
 # Adding pipx to path
