@@ -11,6 +11,7 @@ return {
         "shfmt",
         "flake8",
         "pyright",
+        "gopls",
       },
     },
   },
@@ -22,6 +23,7 @@ return {
           "lua_ls",
           "pyright",
           "tflint",
+          "gopls",
         },
       })
     end,
@@ -40,6 +42,19 @@ return {
       })
       lspconfig.tflint.setup({
         capabilities = capabilities,
+      })
+      lspconfig.gopls.setup({
+        capabilities = capabilities,
+        settings = {
+          gopls = {
+            completeUnimported = true,
+            usePlaceholders = true,
+          },
+          analyses = {
+            unusedparams = true,
+            unreachable = false,
+          },
+        },
       })
 
       vim.keymap.set("n", "K", vim.lsp.buf.hover, {})

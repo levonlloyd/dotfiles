@@ -1,5 +1,5 @@
 return {
-  {
+  --[[{
     "mfussenegger/nvim-dap",
     dependencies = {
       "rcarriga/nvim-dap-ui",
@@ -28,4 +28,5 @@ return {
       vim.keymap.set("n", "<Leader>dc", dap.continue(), {})
     end,
   },
+  ]]
 }
