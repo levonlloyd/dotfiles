@@ -114,7 +114,7 @@ keybinds {
         bind "Ctrl s" { SwitchToMode "Scroll"; }
         bind "d" { Detach; }
         bind "w" {
-            LaunchOrFocusPlugin "session-manager" {
+            LaunchOrFocusPlugin "zellij:session-manager" {
                 floating true
                 move_to_focused_tab true
             };
@@ -148,8 +148,6 @@ keybinds {
         bind "Ctrl g" { SwitchToMode "Locked"; }
         bind "Ctrl q" { Quit; }
         bind "Alt n" { NewPane; }
-        bind "Alt i" { MoveTab "Left"; }
-        bind "Alt o" { MoveTab "Right"; }
         bind "Alt h" "Alt Left" { MoveFocusOrTab "Left"; }
         bind "Alt l" "Alt Right" { MoveFocusOrTab "Right"; }
         bind "Alt j" "Alt Down" { MoveFocus "Down"; }
@@ -186,17 +184,11 @@ keybinds {
 }
 
 plugins {
-    tab-bar location="zellij:tab-bar"
-    status-bar location="zellij:status-bar"
-    strider location="zellij:strider"
-    compact-bar location="zellij:compact-bar"
-    session-manager location="zellij:session-manager"
-    welcome-screen location="zellij:session-manager" {
-        welcome_screen true
-    }
-    filepicker location="zellij:strider" {
-        cwd "/"
-    }
+    tab-bar { path "tab-bar"; }
+    status-bar { path "status-bar"; }
+    strider { path "strider"; }
+    compact-bar { path "compact-bar"; }
+    session-manager { path "session-manager"; }
 }
 
 // Choose what to do when zellij receives SIGTERM, SIGINT, SIGQUIT or SIGHUP
@@ -217,7 +209,7 @@ plugins {
 // Choose the path to the default shell that zellij will use for opening new panes
 // Default: $SHELL
 //
-default_shell "zsh"
+// default_shell "fish"
 
 // Choose the path to override cwd that zellij will use for opening new panes
 //
@@ -228,14 +220,14 @@ default_shell "zsh"
 //   - true (default)
 //   - false
 //
-pane_frames false
+// pane_frames true
 
 // Toggle between having Zellij lay out panes according to a predefined set of layouts whenever possible
 // Options:
 //   - true (default)
 //   - false
 //
-auto_layout true
+// auto_layout true
 
 // Whether sessions should be serialized to the cache folder (including their tabs/panes, cwds and running commands) so that they can later be resurrected
 // Options:
@@ -248,7 +240,7 @@ auto_layout true
 // Options:
 //   - true
 //   - false (default)
-serialize_pane_viewport true
+// serialize_pane_viewport true
 
 // Scrollback lines to serialize along with the pane viewport when serializing sessions, 0
 // defaults to the scrollback size. If this number is higher than the scrollback size, it will
@@ -279,8 +271,7 @@ serialize_pane_viewport true
 // Choose the theme that is specified in the themes section.
 // Default: default
 //
-// theme "default"
-theme "catppuccin-mocha" // or latte, frappe and macchiato
+theme "catppuccin-mocha"
 
 // The name of the default layout to load on startup
 // Default: "default"
@@ -358,9 +349,3 @@ theme "catppuccin-mocha" // or latte, frappe and macchiato
 // Default: true
 //
 // styled_underlines false
-
-// Enable or disable writing of session metadata to disk (if disabled, other sessions might not know
-// metadata info on this session)
-// Default: false
-//
-// disable_session_metadata true

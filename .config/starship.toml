@@ -163,7 +163,7 @@ symbol = " "
 symbol = " "
 
 [os]
-format = " [($name )]($style)"
+format = "$symbol" 
 style = "bold blue"
 disabled = false
 

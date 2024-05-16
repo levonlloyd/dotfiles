@@ -1,5 +1,5 @@
 import = ["/Users/levon/.config/alacritty/catppuccin/catppuccin-mocha.toml"]
-
+  shell = "/bin/zsh"
 [env]
 TERM = "xterm-256color"
 

@@ -1,3 +1,4 @@
+vim.keymap.set("n", "-", require("oil").open, { desc = "Open parent directory" })
 return {
   "stevearc/oil.nvim",
   opts = {},
