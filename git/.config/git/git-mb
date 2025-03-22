@@ -1,0 +1,47 @@
+#!/bin/bash
+
+# Get the current username
+USERNAME=$(git config user.name | sed 's/ /-/g')
+
+# Check if a description is provided as command-line arguments
+if [ $# -eq 0 ]; then
+  echo "Usage: $0 <description>"
+  echo "Example: $0 'Fix bug in login form'"
+  exit 1
+fi
+
+# Construct the branch name from the description
+BRANCH_DESCRIPTION=$(echo "$*" | sed 's/ /-/g')
+
+# Create the final branch name
+BRANCH_NAME="${USERNAME}-${BRANCH_DESCRIPTION}"
+
+# Determine the base branch (master or main)
+BASE_BRANCH="master" # Default to master
+if git show-ref --verify --quiet refs/remotes/origin/main 2>/dev/null; then
+  BASE_BRANCH="main"
+elif ! git show-ref --verify --quiet refs/remotes/origin/master 2>/dev/null; then
+    if git show-ref --verify --quiet refs/heads/main 2>/dev/null; then
+        BASE_BRANCH="main"
+    elif ! git show-ref --verify --quiet refs/heads/master 2>/dev/null; then
+        echo "Error: Neither master nor main branch found locally or remotely."
+        exit 1
+    fi
+fi
+
+# Check if a remote is set. If so, fetch from origin/base_branch.
+if git remote | grep -q origin; then
+  git fetch origin "$BASE_BRANCH" 2>/dev/null # Suppress error messages
+  if [ $? -eq 0 ]; then
+    git checkout -b "$BRANCH_NAME" "origin/$BASE_BRANCH"
+  else
+    echo "Warning: Could not fetch from origin/$BASE_BRANCH. Creating branch from local $BASE_BRANCH."
+    git checkout -b "$BRANCH_NAME" "$BASE_BRANCH"
+  fi
+else
+  echo "Warning: No remote 'origin' found. Creating branch from local $BASE_BRANCH."
+  git checkout -b "$BRANCH_NAME" "$BASE_BRANCH"
+fi
+
+# Inform the user about the created branch
+echo "Created branch: $BRANCH_NAME"
