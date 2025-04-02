@@ -1,190 +1,224 @@
-"$schema" = 'https://starship.rs/config-schema.json'
+# Powerline style with Nord color palette
 
 format = """
-[](surface0)\
-$os\
+[](nord0)\
 $username\
-[](bg:peach fg:surface0)\
+[@](bg:nord0 fg:nord4)\
+$hostname\
+$os\
+[](bg:nord1 fg:nord0)\
 $directory\
-[](fg:peach bg:green)\
+[](bg:nord2 fg:nord1)\
 $git_branch\
 $git_status\
-[](fg:green bg:teal)\
+$git_metrics\
+[](bg:nord3 fg:nord2)\
 $c\
-$rust\
+$elixir\
+$elm\
 $golang\
-$nodejs\
-$php\
-$java\
-$kotlin\
-$haskell\
 $python\
-[](fg:teal bg:blue)\
-$docker_context\
-[](fg:blue bg:purple)\
-$time\
-[ ](fg:purple)\
-$line_break$character"""
+$gradle\
+$haskell\
+$java\
+$julia\
+$nodejs\
+$nim\
+$rust\
+$scala\
+[](fg:nord3)
+$status
+"""
 
-palette = 'catppuccin_mocha'
+scan_timeout = 50
+command_timeout = 1000
+add_newline = false
+palette = 'nord'
 
-[palettes.gruvbox_dark]
-color_fg0 = '#fbf1c7'
-color_bg1 = '#3c3836'
-color_bg3 = '#665c54'
-color_blue = '#458588'
-color_aqua = '#689d6a'
-color_green = '#98971a'
-color_orange = '#d65d0e'
-color_purple = '#b16286'
-color_red = '#cc241d'
-color_yellow = '#d79921'
+[palettes.nord]
+nord0 = '#2E3440'
+nord1 = '#3B4252'
+nord2 = '#434C5E'
+nord3 = '#4C566A'
+nord4 = '#D8DEE9'
+nord11 = '#BF616A'
+nord13 = '#EBCB8B'
+nord14 = '#A2BE8A'
 
-[palettes.catppuccin_mocha]
-rosewater = "#f5e0dc"
-flamingo = "#f2cdcd"
-pink = "#f5c2e7"
-orange = "#cba6f7"
-red = "#f38ba8"
-maroon = "#eba0ac"
-peach = "#fab387"
-yellow = "#f9e2af"
-green = "#a6e3a1"
-teal = "#94e2d5"
-sky = "#89dceb"
-sapphire = "#74c7ec"
-blue = "#89b4fa"
-lavender = "#b4befe"
-text = "#cdd6f4"
-subtext1 = "#bac2de"
-subtext0 = "#a6adc8"
-overlay2 = "#9399b2"
-overlay1 = "#7f849c"
-overlay0 = "#6c7086"
-surface2 = "#585b70"
-surface1 = "#45475a"
-surface0 = "#313244"
-base = "#1e1e2e"
-mantle = "#181825"
-crust = "#11111b"
+# username, host and OS
+[username]
+style_root = 'bg:nord0 fg:nord11'
+style_user = 'bg:nord0 fg:nord4'
+format = '[$user]($style)'
+show_always = true
+disabled = false
+
+[hostname]
+ssh_only = false
+ssh_symbol = ' '
+trim_at = '.'
+format = '[$hostname$ssh_symbol]($style)'
+style = 'bg:nord0 fg:nord4'
+disabled = false
 
 [os]
+format = '[ $symbol ]($style)'
+style = 'bg:nord0 fg:nord4'
 disabled = false
-style = "bg:surface0 fg:text"
+# for symbols look at the end of the file
 
-[os.symbols]
-Windows = "󰍲"
-Ubuntu = "󰕈"
-SUSE = ""
-Raspbian = "󰐿"
-Mint = "󰣭"
-Macos = ""
-Manjaro = ""
-Linux = "󰌽"
-Gentoo = "󰣨"
-Fedora = "󰣛"
-Alpine = ""
-Amazon = ""
-Android = ""
-Arch = "󰣇"
-Artix = "󰣇"
-CentOS = ""
-Debian = "󰣚"
-Redhat = "󱄛"
-RedHatEnterprise = "󱄛"
-
-[username]
-show_always = true
-style_user = "bg:surface0 fg:text"
-style_root = "bg:surface0 fg:text"
-format = '[ $user ]($style)'
-
+# directory
 [directory]
-style = "fg:mantle bg:peach"
-format = "[ $path ]($style)"
-truncation_length = 3
-truncation_symbol = "…/"
+truncation_length = 1
+truncate_to_repo = true
+format = '[ $path ]($style)[$read_only]($read_only_style)'
+style = 'bg:nord1 fg:nord4'
+disabled = false
+read_only = ' 󰌾 '
+read_only_style = 'bg:nord1 fg:nord11'
+truncation_symbol = ''
 
 [directory.substitutions]
-"Documents" = "󰈙 "
-"Downloads" = " "
-"Music" = "󰝚 "
-"Pictures" = " "
-"Developer" = "󰲋 "
+'Documents' = '󰈙'
+'Dokumente' = '󰈙'
+'Downloads' = ' '
+'Music' = ' '
+'Musik' = ' '
+'Pictures' = ' '
+'Bilder' = ' '
+'Projects' = ' '
 
+# git
 [git_branch]
-symbol = ""
-style = "bg:teal"
-format = '[[ $symbol $branch ](fg:base bg:green)]($style)'
+symbol = ''
+style = 'bg:nord2 fg:nord4'
+format = '[ $symbol $branch ]($style)'
 
 [git_status]
-style = "bg:teal"
-format = '[[($all_status$ahead_behind )](fg:base bg:green)]($style)'
+style = 'bg:nord2 fg:nord4'
+format = '[$all_status$ahead_behind ]($style)'
 
-[nodejs]
-symbol = ""
-style = "bg:teal"
-format = '[[ $symbol( $version) ](fg:base bg:teal)]($style)'
+[git_metrics]
+added_style = 'bg:nord2 fg:nord14'
+deleted_style = 'bg:nord2 fg:nord11'
+format = '[+$added ]($added_style)[-$deleted ]($deleted_style)'
+disabled = false
 
+# programming
 [c]
-symbol = " "
-style = "bg:teal"
-format = '[[ $symbol( $version) ](fg:base bg:teal)]($style)'
+symbol = ' '
+style = 'bg:nord3 fg:nord4'
+format = '[ $symbol ($version) ]($style)'
 
-[rust]
-symbol = ""
-style = "bg:teal"
-format = '[[ $symbol( $version) ](fg:base bg:teal)]($style)'
+[elixir]
+symbol = ' '
+style = 'bg:nord3 fg:nord4'
+format = '[ $symbol ($version) ]($style)'
+
+[elm]
+symbol = ' '
+style = 'bg:nord3 fg:nord4'
+format = '[ $symbol ($version) ]($style)'
 
 [golang]
-symbol = ""
-style = "bg:teal"
-format = '[[ $symbol( $version) ](fg:base bg:teal)]($style)'
-
-[php]
-symbol = ""
-style = "bg:teal"
-format = '[[ $symbol( $version) ](fg:base bg:teal)]($style)'
-
-[java]
-symbol = " "
-style = "bg:teal"
-format = '[[ $symbol( $version) ](fg:base bg:teal)]($style)'
-
-[kotlin]
-symbol = ""
-style = "bg:teal"
-format = '[[ $symbol( $version) ](fg:base bg:teal)]($style)'
-
-[haskell]
-symbol = ""
-style = "bg:teal"
-format = '[[ $symbol( $version) ](fg:base bg:teal)]($style)'
+symbol = ' '
+style = 'bg:nord3 fg:nord4'
+format = '[ $symbol ($version) ]($style)'
 
 [python]
-symbol = ""
-style = "bg:teal"
-format = '[[ $symbol( $version) ](fg:base bg:teal)]($style)'
+symbol = ' '
+style = 'bg:nord3 fg:nord4'
+format = '[ $symbol ($version) (\($virtualenv\)) ]($style)'
 
-[docker_context]
-symbol = ""
-style = "bg:mantle"
-format = '[[ $symbol( $context) ](fg:#83a598 bg:color_bg3)]($style)'
+[gradle]
+style = 'bg:nord3 fg:nord4'
+format = '[ $symbol ($version) ]($style)'
 
-[time]
+[haskell]
+symbol = ' '
+style = 'bg:nord3 fg:nord4'
+format = '[ $symbol ($version) ]($style)'
+
+[java]
+symbol = ' '
+style = 'bg:nord3 fg:nord4'
+format = '[ $symbol ($version) ]($style)'
+
+[julia]
+symbol = ' '
+style = 'bg:nord3 fg:nord4'
+format = '[ $symbol ($version) ]($style)'
+
+[nodejs]
+symbol = ''
+style = 'bg:nord3 fg:nord4'
+format = '[ $symbol ($version) ]($style)'
+
+[nim]
+symbol = '󰆥 '
+style = 'bg:nord3 fg:nord4'
+format = '[ $symbol ($version) ]($style)'
+
+[rust]
+symbol = ''
+style = 'bg:nord3 fg:nord4'
+format = '[ $symbol ($version) ]($style)'
+
+[scala]
+symbol = ' '
+style = 'bg:nord3 fg:nord4'
+format = '[ $symbol ($version) ]($style)'
+
+# status
+[status]
+format = '[ $symbol ]($style)'
+style = "bold"
+symbol = '[](fg:nord11)'
+success_symbol = '[](fg:nord14)'
+not_executable_symbol = '[🛇](fg:nord11)'
+not_found_symbol = '[󰍉](fg:nord11)'
+sigint_symbol = '[](fg:nord13)'
+signal_symbol = '[](fg:nord11)'
 disabled = false
-time_format = "%R"
-style = "bg:peach"
-format = '[[  $time ](fg:mantle bg:purple)]($style)'
 
-[line_break]
-disabled = false
-
-[character]
-disabled = false
-success_symbol = '[](bold fg:green)'
-error_symbol = '[](bold fg:red)'
-vimcmd_symbol = '[](bold fg:creen)'
-vimcmd_replace_one_symbol = '[](bold fg:purple)'
-vimcmd_replace_symbol = '[](bold fg:purple)'
-vimcmd_visual_symbol = '[](bold fg:lavender)'
+# OS symbols
+[os.symbols]
+Alpaquita = ' '
+Alpine = ' '
+Amazon = ' '
+Android = ' '
+Arch = ' '
+Artix = ' '
+CentOS = ' '
+Debian = ' '
+DragonFly = ' '
+Emscripten = ' '
+EndeavourOS = ' '
+Fedora = ' '
+FreeBSD = ' '
+Garuda = '󰛓 '
+Gentoo = ' '
+HardenedBSD = '󰞌 '
+Illumos = '󰈸 '
+Linux = ' '
+Mabox = ' '
+Macos = ' '
+Manjaro = ' '
+Mariner = ' '
+MidnightBSD = ' '
+Mint = ' '
+NetBSD = ' '
+NixOS = ' '
+OpenBSD = '󰈺 '
+openSUSE = ' '
+OracleLinux = '󰌷 '
+Pop = ' '
+Raspbian = ' '
+Redhat = ' '
+RedHatEnterprise = ' '
+Redox = '󰀘 '
+Solus = '󰠳 '
+SUSE = ' '
+Ubuntu = ' '
+Unknown = ' '
+Windows = '󰍲 '

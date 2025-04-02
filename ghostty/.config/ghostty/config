@@ -27,7 +27,7 @@
 # # Just for example:
 # resize-overlay-duration = 4s 200ms
 
-theme = catppuccin-mocha
+theme = nord
 background-opacity = 0.9
 background-blur-radius = 20
 window-save-state = always
