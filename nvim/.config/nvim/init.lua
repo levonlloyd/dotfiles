@@ -29,4 +29,5 @@ require("lazy").setup({
 	require("plugins.noice"),
 	require("plugins.oil"),
 	require("plugins.mini"),
+	require("plugins.copilot"),
 })
