@@ -1,0 +1,398 @@
+#!/bin/bash
+
+# Git Save State Script - Save current work state including new files
+# Usage: ./save-state.sh [--branch-name NAME] [--message MESSAGE] [--force-main]
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+PURPLE='\033[0;35m'
+NC='\033[0m' # No Color
+
+# Default values
+BRANCH_NAME=""
+COMMIT_MESSAGE=""
+FORCE_ON_MAIN=false
+SKIP_VERIFICATION=true
+MAIN_BRANCHES=("main" "master" "trunk")
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -b|--branch-name)
+            BRANCH_NAME="$2"
+            shift 2
+            ;;
+        -m|--message)
+            COMMIT_MESSAGE="$2"
+            shift 2
+            ;;
+        -f|--force-main)
+            FORCE_ON_MAIN=true
+            shift
+            ;;
+        --verify)
+            SKIP_VERIFICATION=false
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: $0 [options]"
+            echo
+            echo "Save current local state including untracked files in a temp commit."
+            echo "Automatically creates a new branch if currently on main/master/trunk."
+            echo
+            echo "Options:"
+            echo "  -b, --branch-name NAME   Specify branch name (auto-generated if not provided)"
+            echo "  -m, --message MESSAGE    Custom commit message"
+            echo "  -f, --force-main         Allow saving on main branch without creating new branch"
+            echo "      --verify             Enable confirmation prompts (disabled by default)"
+            echo "  -h, --help              Show this help message"
+            echo
+            echo "Examples:"
+            echo "  $0                                    # Auto-generate branch and commit"
+            echo "  $0 -b feature/my-work                # Use specific branch name"
+            echo "  $0 -m \"WIP: working on feature X\"     # Custom commit message"
+            echo "  $0 -b temp-fix -m \"Quick fix attempt\"  # Both custom branch and message"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+# Function to print colored output
+print_color() {
+    echo -e "${1}${2}${NC}"
+}
+
+# Function to print step headers
+print_step() {
+    echo
+    print_color $CYAN "=== $1 ==="
+}
+
+# Function to confirm user action (only if verification enabled)
+confirm() {
+    if [ "$SKIP_VERIFICATION" = "true" ]; then
+        return 0
+    fi
+    read -p "$(echo -e ${YELLOW}"$1 (y/N): "${NC})" -n 1 -r
+    echo
+    [[ $REPLY =~ ^[Yy]$ ]]
+}
+
+# Function to check if we're in a git repository
+check_git_repo() {
+    if ! git rev-parse --git-dir > /dev/null 2>&1; then
+        print_color $RED "Error: Not in a git repository!"
+        exit 1
+    fi
+}
+
+# Function to get current branch name
+get_current_branch() {
+    git branch --show-current
+}
+
+# Function to check if current branch is a main branch
+is_main_branch() {
+    local current_branch=$1
+    for main in "${MAIN_BRANCHES[@]}"; do
+        if [ "$current_branch" = "$main" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Function to generate timestamp-based branch name
+generate_branch_name() {
+    local current_branch=$1
+    local timestamp=$(date +"%Y%m%d-%H%M%S")
+    local username=$(git config user.name | tr '[:upper:]' '[:lower:]' | tr ' ' '-' 2>/dev/null || echo "user")
+    
+    if is_main_branch "$current_branch"; then
+        echo "temp/work-${timestamp}"
+    else
+        echo "temp/${current_branch}-${timestamp}"
+    fi
+}
+
+# Function to generate commit message
+generate_commit_message() {
+    local branch_name=$1
+    local timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+    echo "💾 TEMP: Save work state on ${branch_name} (${timestamp})"
+}
+
+# Function to check what changes exist
+analyze_changes() {
+    local has_staged=false
+    local has_unstaged=false
+    local has_untracked=false
+    
+    # Check for staged changes
+    if ! git diff --cached --quiet 2>/dev/null; then
+        has_staged=true
+    fi
+    
+    # Check for unstaged changes
+    if ! git diff --quiet 2>/dev/null; then
+        has_unstaged=true
+    fi
+    
+    # Check for untracked files (excluding gitignored ones)
+    if [ -n "$(git ls-files --others --exclude-standard)" ]; then
+        has_untracked=true
+    fi
+    
+    echo "$has_staged,$has_unstaged,$has_untracked"
+}
+
+# Function to show current state
+show_current_state() {
+    local current_branch=$1
+    
+    print_step "Current Repository State"
+    print_color $BLUE "Current branch: $current_branch"
+    
+    # Show current status
+    echo
+    print_color $BLUE "Git status:"
+    git status --short
+    
+    # Analyze changes
+    local changes=$(analyze_changes)
+    IFS=',' read -r has_staged has_unstaged has_untracked <<< "$changes"
+    
+    echo
+    print_color $BLUE "Changes detected:"
+    
+    if [ "$has_staged" = "true" ]; then
+        print_color $GREEN "  ✓ Staged changes"
+        git diff --cached --name-only | sed 's/^/    /'
+    else
+        print_color $YELLOW "  - No staged changes"
+    fi
+    
+    if [ "$has_unstaged" = "true" ]; then
+        print_color $GREEN "  ✓ Unstaged changes"
+        git diff --name-only | sed 's/^/    /'
+    else
+        print_color $YELLOW "  - No unstaged changes"
+    fi
+    
+    if [ "$has_untracked" = "true" ]; then
+        print_color $GREEN "  ✓ Untracked files"
+        git ls-files --others --exclude-standard | sed 's/^/    /'
+    else
+        print_color $YELLOW "  - No untracked files"
+    fi
+    
+    # Check if there's anything to save
+    if [ "$has_staged" = "false" ] && [ "$has_unstaged" = "false" ] && [ "$has_untracked" = "false" ]; then
+        print_color $YELLOW "No changes to save!"
+        return 1
+    fi
+    
+    return 0
+}
+
+# Function to create new branch if needed
+handle_branch_creation() {
+    local current_branch=$1
+    local target_branch_name=$2
+    
+    if is_main_branch "$current_branch" && [ "$FORCE_ON_MAIN" = "false" ]; then
+        print_step "Creating New Branch"
+        print_color $YELLOW "⚠️  You're currently on a main branch: $current_branch"
+        print_color $BLUE "Creating new branch: $target_branch_name"
+        
+        if confirm "Create new branch '$target_branch_name'?"; then
+            git checkout -b "$target_branch_name"
+            print_color $GREEN "✓ Created and switched to branch: $target_branch_name"
+            return 0
+        else
+            if [ "$SKIP_VERIFICATION" = "true" ]; then
+                # Auto-proceed if verification is skipped
+                git checkout -b "$target_branch_name"
+                print_color $GREEN "✓ Created and switched to branch: $target_branch_name"
+                return 0
+            else
+                print_color $RED "Aborted: Cannot save state on main branch without new branch"
+                exit 1
+            fi
+        fi
+    elif [ "$current_branch" != "$target_branch_name" ] && [ -n "$BRANCH_NAME" ]; then
+        # User specified a different branch name
+        print_step "Creating New Branch"
+        print_color $BLUE "Creating new branch: $target_branch_name"
+        
+        if git show-ref --verify --quiet refs/heads/$target_branch_name; then
+            print_color $YELLOW "Branch '$target_branch_name' already exists"
+            if confirm "Switch to existing branch '$target_branch_name'?"; then
+                git checkout "$target_branch_name"
+                print_color $GREEN "✓ Switched to existing branch: $target_branch_name"
+            else
+                if [ "$SKIP_VERIFICATION" = "true" ]; then
+                    # Auto-proceed if verification is skipped
+                    git checkout "$target_branch_name"
+                    print_color $GREEN "✓ Switched to existing branch: $target_branch_name"
+                else
+                    print_color $RED "Aborted by user"
+                    exit 1
+                fi
+            fi
+        else
+            git checkout -b "$target_branch_name"
+            print_color $GREEN "✓ Created and switched to branch: $target_branch_name"
+        fi
+    fi
+    
+    return 0
+}
+
+# Function to save the current state
+save_current_state() {
+    local commit_msg=$1
+    
+    print_step "Saving Current State"
+    
+    # Add all files including untracked ones
+    print_color $BLUE "Adding all files (including untracked)..."
+    git add -A
+    
+    # Show what's about to be committed
+    echo
+    print_color $BLUE "Files to be committed:"
+    git diff --cached --name-status | sed 's/^/  /'
+    
+    echo
+    if ! confirm "Proceed with temp commit?"; then
+        if [ "$SKIP_VERIFICATION" = "true" ]; then
+            # Auto-proceed if verification is skipped
+            print_color $BLUE "Auto-proceeding with commit..."
+        else
+            # Unstage everything if user cancels
+            git reset HEAD -- . 2>/dev/null || true
+            print_color $YELLOW "Cancelled - no changes committed"
+            exit 0
+        fi
+    fi
+    
+    # Create the temporary commit (skip pre-commit hooks)
+    git commit --no-verify -m "$commit_msg"
+    print_color $GREEN "✓ State saved in temporary commit (hooks skipped)"
+    
+    # Show the commit
+    echo
+    print_color $BLUE "Commit created:"
+    git log --oneline -1
+    
+    return 0
+}
+
+# Function to show recovery instructions
+show_recovery_instructions() {
+    local current_branch=$1
+    local commit_hash=$(git rev-parse HEAD)
+    
+    print_step "Recovery Instructions"
+    print_color $PURPLE "Your work has been saved! Here's how to manage it:"
+    echo
+    
+    print_color $BLUE "Current state:"
+    print_color $BLUE "  • Branch: $current_branch"
+    print_color $BLUE "  • Commit: $commit_hash"
+    echo
+    
+    print_color $YELLOW "To continue working:"
+    print_color $YELLOW "  • Just keep working - your changes are committed"
+    print_color $YELLOW "  • Make new commits as normal"
+    echo
+    
+    print_color $YELLOW "To undo this temp commit (but keep files):"
+    print_color $YELLOW "  • git reset --soft HEAD~1    # Unstage to staged"
+    print_color $YELLOW "  • git reset --mixed HEAD~1   # Unstage to working dir"
+    echo
+    
+    print_color $YELLOW "To completely remove temp commit:"
+    print_color $YELLOW "  • git reset --hard HEAD~1    # ⚠️  Loses all changes!"
+    echo
+    
+    print_color $YELLOW "To create a proper commit from temp:"
+    print_color $YELLOW "  • git reset --soft HEAD~1"
+    print_color $YELLOW "  • git commit -m \"Your real commit message\""
+    echo
+    
+    if [[ $current_branch == temp/* ]]; then
+        print_color $BLUE "Since you're on a temporary branch:"
+        print_color $BLUE "  • Work here temporarily, then merge/rebase to main branch"
+        print_color $BLUE "  • Or cherry-pick commits: git cherry-pick $commit_hash"
+        print_color $BLUE "  • Delete temp branch when done: git branch -d $current_branch"
+    fi
+}
+
+# Main script execution
+main() {
+    print_color $GREEN "Git Save State - Safely save current work including new files"
+    
+    # Check prerequisites
+    check_git_repo
+    
+    # Get current branch
+    local current_branch=$(get_current_branch)
+    
+    if [ -z "$current_branch" ]; then
+        print_color $RED "Error: Not on any branch (detached HEAD state)"
+        print_color $YELLOW "Create a branch first: git checkout -b temp-branch"
+        exit 1
+    fi
+    
+    # Show current state and check if there's anything to save
+    if ! show_current_state "$current_branch"; then
+        exit 0
+    fi
+    
+    # Determine target branch name
+    local target_branch=""
+    if [ -n "$BRANCH_NAME" ]; then
+        target_branch="$BRANCH_NAME"
+    elif is_main_branch "$current_branch" && [ "$FORCE_ON_MAIN" = "false" ]; then
+        target_branch=$(generate_branch_name "$current_branch")
+    else
+        target_branch="$current_branch"
+    fi
+    
+    # Determine commit message
+    local commit_msg=""
+    if [ -n "$COMMIT_MESSAGE" ]; then
+        commit_msg="$COMMIT_MESSAGE"
+    else
+        commit_msg=$(generate_commit_message "$target_branch")
+    fi
+    
+    print_color $BLUE "Target branch: $target_branch"
+    print_color $BLUE "Commit message: $commit_msg"
+    echo
+    
+    # Handle branch creation if needed
+    handle_branch_creation "$current_branch" "$target_branch"
+    
+    # Save the current state
+    save_current_state "$commit_msg"
+    
+    # Show recovery instructions
+    show_recovery_instructions "$(get_current_branch)"
+}
+
+# Run main function
+main "$@"

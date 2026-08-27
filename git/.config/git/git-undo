@@ -1,0 +1,243 @@
+#!/bin/bash
+
+# Git Undo Script - Interactive tool for safely undoing git operations
+# Usage: ./undo.sh
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Function to print colored output
+print_color() {
+    echo -e "${1}${2}${NC}"
+}
+
+# Function to confirm user action
+confirm() {
+    read -p "$(echo -e ${YELLOW}"$1 (y/N): "${NC})" -n 1 -r
+    echo
+    [[ $REPLY =~ ^[Yy]$ ]]
+}
+
+# Function to check if we're in a git repository
+check_git_repo() {
+    if ! git rev-parse --git-dir > /dev/null 2>&1; then
+        print_color $RED "Error: Not in a git repository!"
+        exit 1
+    fi
+}
+
+# Function to show current git status
+show_status() {
+    print_color $BLUE "=== Current Git Status ==="
+    git status --short
+    echo
+    print_color $BLUE "=== Recent Commits ==="
+    git log --oneline -5
+    echo
+}
+
+# Function to undo last commit (keep changes)
+undo_last_commit_soft() {
+    print_color $YELLOW "This will undo the last commit but keep all changes staged"
+    if confirm "Proceed?"; then
+        git reset --soft HEAD~1
+        print_color $GREEN "✓ Last commit undone (changes kept staged)"
+    fi
+}
+
+# Function to undo last commit (unstage changes)
+undo_last_commit_mixed() {
+    print_color $YELLOW "This will undo the last commit and unstage changes (but keep files modified)"
+    if confirm "Proceed?"; then
+        git reset --mixed HEAD~1
+        print_color $GREEN "✓ Last commit undone (changes unstaged)"
+    fi
+}
+
+# Function to undo last commit (discard changes)
+undo_last_commit_hard() {
+    print_color $RED "⚠️  WARNING: This will permanently delete the last commit and all changes!"
+    print_color $RED "Last commit: $(git log --oneline -1)"
+    if confirm "Are you absolutely sure?"; then
+        git reset --hard HEAD~1
+        print_color $GREEN "✓ Last commit completely removed"
+    fi
+}
+
+# Function to undo last merge
+undo_last_merge() {
+    # Check if the last commit is a merge commit
+    if ! git show --pretty=format:"%P" -s HEAD | grep -q " "; then
+        print_color $RED "Error: The last commit is not a merge commit"
+        return 1
+    fi
+    
+    print_color $YELLOW "This will undo the last merge commit"
+    print_color $YELLOW "Merge commit: $(git log --oneline -1)"
+    if confirm "Proceed?"; then
+        git reset --hard HEAD~1
+        print_color $GREEN "✓ Last merge undone"
+    fi
+}
+
+# Function to discard uncommitted changes
+discard_uncommitted() {
+    print_color $RED "⚠️  WARNING: This will permanently discard all uncommitted changes!"
+    git status --short
+    if confirm "Discard all uncommitted changes?"; then
+        git reset --hard HEAD
+        git clean -fd
+        print_color $GREEN "✓ All uncommitted changes discarded"
+    fi
+}
+
+# Function to unstage all files
+unstage_all() {
+    if git diff --cached --quiet; then
+        print_color $YELLOW "No staged changes to unstage"
+        return
+    fi
+    
+    print_color $YELLOW "This will unstage all currently staged files"
+    if confirm "Proceed?"; then
+        git reset HEAD
+        print_color $GREEN "✓ All files unstaged"
+    fi
+}
+
+# Function to undo specific number of commits
+undo_multiple_commits() {
+    read -p "How many commits to undo? " num_commits
+    
+    if ! [[ "$num_commits" =~ ^[0-9]+$ ]] || [ "$num_commits" -le 0 ]; then
+        print_color $RED "Error: Please enter a valid positive number"
+        return 1
+    fi
+    
+    print_color $BLUE "Commits to be undone:"
+    git log --oneline -$num_commits
+    echo
+    
+    echo "Choose reset type:"
+    echo "1) Soft (keep changes staged)"
+    echo "2) Mixed (keep changes unstaged)"  
+    echo "3) Hard (discard all changes)"
+    read -p "Enter choice (1-3): " reset_type
+    
+    case $reset_type in
+        1)
+            if confirm "Undo $num_commits commits (soft reset)?"; then
+                git reset --soft HEAD~$num_commits
+                print_color $GREEN "✓ $num_commits commits undone (changes kept staged)"
+            fi
+            ;;
+        2)
+            if confirm "Undo $num_commits commits (mixed reset)?"; then
+                git reset --mixed HEAD~$num_commits
+                print_color $GREEN "✓ $num_commits commits undone (changes unstaged)"
+            fi
+            ;;
+        3)
+            print_color $RED "⚠️  WARNING: This will permanently delete $num_commits commits and all changes!"
+            if confirm "Are you absolutely sure?"; then
+                git reset --hard HEAD~$num_commits
+                print_color $GREEN "✓ $num_commits commits permanently removed"
+            fi
+            ;;
+        *)
+            print_color $RED "Invalid choice"
+            ;;
+    esac
+}
+
+# Function to restore deleted file
+restore_file() {
+    read -p "Enter the file path to restore: " file_path
+    
+    if [ -z "$file_path" ]; then
+        print_color $RED "Error: File path cannot be empty"
+        return 1
+    fi
+    
+    # Check if file exists in the last commit
+    if git show HEAD:$file_path > /dev/null 2>&1; then
+        if confirm "Restore '$file_path' from last commit?"; then
+            git checkout HEAD -- "$file_path"
+            print_color $GREEN "✓ File '$file_path' restored"
+        fi
+    else
+        print_color $RED "Error: File '$file_path' not found in last commit"
+    fi
+}
+
+# Function to show reflog for advanced recovery
+show_reflog() {
+    print_color $BLUE "=== Git Reflog (recent HEAD movements) ==="
+    git reflog --oneline -10
+    echo
+    print_color $YELLOW "Use 'git reset --hard <commit-hash>' to restore to any of these states"
+    print_color $YELLOW "Example: git reset --hard HEAD@{1}"
+}
+
+# Main menu
+show_menu() {
+    echo
+    print_color $BLUE "=== Git Undo Tool ==="
+    echo "1)  Undo last commit (keep changes staged)"
+    echo "2)  Undo last commit (unstage changes)"
+    echo "3)  Undo last commit (discard changes) ⚠️"
+    echo "4)  Undo last merge"
+    echo "5)  Undo multiple commits"
+    echo "6)  Discard all uncommitted changes ⚠️"
+    echo "7)  Unstage all files"
+    echo "8)  Restore deleted file"
+    echo "9)  Show reflog (advanced recovery)"
+    echo "10) Show current status"
+    echo "q)  Quit"
+    echo
+}
+
+# Main script execution
+main() {
+    check_git_repo
+    
+    print_color $GREEN "Git Undo Tool - Safe operations for common git mistakes"
+    show_status
+    
+    while true; do
+        show_menu
+        read -p "Choose an option: " choice
+        
+        case $choice in
+            1) undo_last_commit_soft ;;
+            2) undo_last_commit_mixed ;;
+            3) undo_last_commit_hard ;;
+            4) undo_last_merge ;;
+            5) undo_multiple_commits ;;
+            6) discard_uncommitted ;;
+            7) unstage_all ;;
+            8) restore_file ;;
+            9) show_reflog ;;
+            10) show_status ;;
+            q|Q) 
+                print_color $GREEN "Goodbye!"
+                exit 0
+                ;;
+            *)
+                print_color $RED "Invalid option. Please try again."
+                ;;
+        esac
+        
+        echo
+        read -p "Press Enter to continue..."
+    done
+}
+
+# Run main function
+main

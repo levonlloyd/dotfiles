@@ -1,0 +1,141 @@
+#!/bin/bash
+
+# Git cleanup script: Delete merged branches, prune remotes, and run garbage collection
+# Usage: ./git-cleanup.sh [--dry-run]
+
+set -e  # Exit on any error
+
+DRY_RUN=false
+if [[ "$1" == "--dry-run" ]]; then
+    DRY_RUN=true
+    echo "🔍 DRY RUN MODE - No changes will be made"
+    echo "=================================="
+fi
+
+# Function to execute or simulate commands
+execute_or_show() {
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "Would run: $*"
+    else
+        echo "Running: $*"
+        "$@"
+    fi
+}
+
+# Check if we're in a git repository
+if ! git rev-parse --git-dir > /dev/null 2>&1; then
+    echo "❌ Error: Not in a git repository"
+    exit 1
+fi
+
+echo "🧹 Starting Git cleanup..."
+echo
+
+# Fetch latest changes from all remotes
+echo "📡 Fetching latest changes from remotes..."
+execute_or_show git fetch --all --prune
+
+# Determine the main branch (master, main, or trunk)
+MAIN_BRANCH=""
+for branch in main master trunk; do
+    if git show-ref --verify --quiet refs/heads/$branch; then
+        MAIN_BRANCH=$branch
+        break
+    fi
+done
+
+if [[ -z "$MAIN_BRANCH" ]]; then
+    echo "❌ Error: Could not find main branch (tried: main, master, trunk)"
+    exit 1
+fi
+
+echo "🎯 Using '$MAIN_BRANCH' as the main branch"
+echo
+
+# Get current branch
+CURRENT_BRANCH=$(git branch --show-current)
+
+# Switch to main branch if not already there
+if [[ "$CURRENT_BRANCH" != "$MAIN_BRANCH" ]]; then
+    echo "🔄 Switching to $MAIN_BRANCH branch..."
+    execute_or_show git checkout "$MAIN_BRANCH"
+fi
+
+# Pull latest changes on main branch
+echo "⬇️  Pulling latest changes on $MAIN_BRANCH..."
+execute_or_show git pull origin "$MAIN_BRANCH"
+
+# Find branches that have been merged into main
+echo "🔍 Finding branches merged into $MAIN_BRANCH..."
+MERGED_BRANCHES=$(git branch --merged "$MAIN_BRANCH" | grep -v "^\*" | grep -v "^\s*$MAIN_BRANCH$" | sed 's/^[ \t]*//')
+
+if [[ -z "$MERGED_BRANCHES" ]]; then
+    echo "✅ No merged branches found to delete"
+else
+    echo "📋 Found merged branches:"
+    echo "$MERGED_BRANCHES" | sed 's/^/  - /'
+    echo
+    
+    # Delete merged branches
+    echo "🗑️  Deleting merged branches..."
+    while IFS= read -r branch; do
+        if [[ -n "$branch" ]]; then
+            execute_or_show git branch -d "$branch"
+        fi
+    done <<< "$MERGED_BRANCHES"
+fi
+
+echo
+
+# Prune remote tracking branches
+echo "✂️  Pruning remote tracking branches..."
+for remote in $(git remote); do
+    echo "  Pruning remote: $remote"
+    execute_or_show git remote prune "$remote"
+done
+
+echo
+
+# Clean up remote branches that no longer exist
+echo "🧽 Cleaning up remote branches that no longer exist..."
+execute_or_show git fetch --all --prune
+
+# Show remote branches that are gone
+GONE_BRANCHES=$(git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads | awk '$2 == "[gone]" {print $1}')
+
+if [[ -n "$GONE_BRANCHES" ]]; then
+    echo "📋 Found branches tracking deleted remotes:"
+    echo "$GONE_BRANCHES" | sed 's/^/  - /'
+    echo
+    
+    echo "🗑️  Deleting branches that track deleted remotes..."
+    while IFS= read -r branch; do
+        if [[ -n "$branch" ]]; then
+            execute_or_show git branch -D "$branch"
+        fi
+    done <<< "$GONE_BRANCHES"
+else
+    echo "✅ No branches tracking deleted remotes found"
+fi
+
+echo
+
+# Run garbage collection
+echo "🗑️  Running garbage collection..."
+execute_or_show git gc --prune=now --aggressive
+
+echo
+echo "✨ Git cleanup completed!"
+
+# Show summary
+echo
+echo "📊 Repository status:"
+echo "  Current branch: $(git branch --show-current)"
+echo "  Local branches: $(git branch | wc -l | tr -d ' ')"
+echo "  Remote branches: $(git branch -r | wc -l | tr -d ' ')"
+
+if [[ "$DRY_RUN" == "true" ]]; then
+    echo
+    echo "🔍 This was a dry run. To actually perform the cleanup, run:"
+    echo "  $0"
+fi

@@ -1,0 +1,552 @@
+#!/bin/bash
+
+# Interactive Git Timeline - Beautiful commit browser
+# Usage: ./git-timeline.sh [options]
+# Options:
+#   -a, --author <name>     Filter by author
+#   -s, --since <date>      Show commits since date (e.g., "2 weeks ago", "2024-01-01")
+#   -u, --until <date>      Show commits until date
+#   -f, --file <path>       Show commits affecting specific file/path
+#   -n, --number <count>    Limit number of commits (default: 50)
+#   -b, --branch <branch>   Show commits from specific branch
+#   -g, --grep <pattern>    Search commit messages
+#   -h, --help             Show this help
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+WHITE='\033[1;37m'
+GRAY='\033[0;37m'
+BOLD='\033[1m'
+DIM='\033[2m'
+NC='\033[0m' # No Color
+
+# Default values
+AUTHOR=""
+SINCE=""
+UNTIL=""
+FILE_PATH=""
+LIMIT=50
+BRANCH=""
+GREP_PATTERN=""
+SHOW_STATS=false
+
+# Function to display usage
+usage() {
+    echo "Interactive Git Timeline - Navigate your git history"
+    echo ""
+    echo "Usage: $0 [options]"
+    echo ""
+    echo "Options:"
+    echo "  -a, --author <name>     Filter by author name or email"
+    echo "  -s, --since <date>      Show commits since date (e.g., '2 weeks ago', '2024-01-01')"
+    echo "  -u, --until <date>      Show commits until date"
+    echo "  -f, --file <path>       Show commits affecting specific file or path"
+    echo "  -n, --number <count>    Limit number of commits (default: 50)"
+    echo "  -b, --branch <branch>   Show commits from specific branch (default: current)"
+    echo "  -g, --grep <pattern>    Search commit messages for pattern"
+    echo "  --stats                Show file change statistics"
+    echo "  -h, --help             Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  $0                                    # Show recent commits"
+    echo "  $0 -a 'john doe' -s '1 week ago'     # John's commits from last week"
+    echo "  $0 -f src/main.js                    # Commits affecting main.js"
+    echo "  $0 -g 'fix.*bug' -n 20               # Search for bug fixes"
+    echo "  $0 --stats -s '1 month ago'          # Recent commits with file stats"
+    exit 1
+}
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -a|--author)
+            AUTHOR="$2"
+            shift 2
+            ;;
+        -s|--since)
+            SINCE="$2"
+            shift 2
+            ;;
+        -u|--until)
+            UNTIL="$2"
+            shift 2
+            ;;
+        -f|--file)
+            FILE_PATH="$2"
+            shift 2
+            ;;
+        -n|--number)
+            LIMIT="$2"
+            shift 2
+            ;;
+        -b|--branch)
+            BRANCH="$2"
+            shift 2
+            ;;
+        -g|--grep)
+            GREP_PATTERN="$2"
+            shift 2
+            ;;
+        --stats)
+            SHOW_STATS=true
+            shift
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            ;;
+    esac
+done
+
+# Check if we're in a git repository
+if ! git rev-parse --git-dir > /dev/null 2>&1; then
+    echo "Error: Not in a git repository"
+    exit 1
+fi
+
+# Build git log command
+build_git_command() {
+    local cmd="git log"
+    
+    # Add branch if specified
+    if [ -n "$BRANCH" ]; then
+        cmd="$cmd $BRANCH"
+    fi
+    
+    # Add author filter
+    if [ -n "$AUTHOR" ]; then
+        cmd="$cmd --author='$AUTHOR'"
+    fi
+    
+    # Add date filters
+    if [ -n "$SINCE" ]; then
+        cmd="$cmd --since='$SINCE'"
+    fi
+    
+    if [ -n "$UNTIL" ]; then
+        cmd="$cmd --until='$UNTIL'"
+    fi
+    
+    # Add grep pattern
+    if [ -n "$GREP_PATTERN" ]; then
+        cmd="$cmd --grep='$GREP_PATTERN'"
+    fi
+    
+    # Add limit
+    cmd="$cmd -n $LIMIT"
+    
+    # Add file path (must be last)
+    if [ -n "$FILE_PATH" ]; then
+        cmd="$cmd -- '$FILE_PATH'"
+    fi
+    
+    echo "$cmd"
+}
+
+# Function to get commit details
+get_commit_details() {
+    local hash=$1
+    echo "Hash: $hash"
+    echo "Author: $(git show -s --format='%an <%ae>' "$hash")"
+    echo "Date: $(git show -s --format='%ad' --date=format:'%Y-%m-%d %H:%M:%S' "$hash")"
+    echo "Relative: $(git show -s --format='%ar' "$hash")"
+    echo "Subject: $(git show -s --format='%s' "$hash")"
+    local body=$(git show -s --format='%b' "$hash")
+    if [ -n "$body" ]; then
+        echo "Body: $body"
+    fi
+}
+
+# Function to get file changes
+get_file_changes() {
+    local hash=$1
+    if [ "$SHOW_STATS" = true ]; then
+        git show --stat --format="" "$hash"
+    else
+        git show --name-status --format="" "$hash"
+    fi
+}
+
+# Function to display a single commit
+display_commit() {
+    local line=$1
+    local index=$2
+    local total=$3
+    
+    # Parse the log line
+    local hash=$(echo "$line" | cut -d'|' -f1)
+    local author=$(echo "$line" | cut -d'|' -f2)
+    local date=$(echo "$line" | cut -d'|' -f3)
+    local relative=$(echo "$line" | cut -d'|' -f4)
+    local subject=$(echo "$line" | cut -d'|' -f5)
+    local refs=$(echo "$line" | cut -d'|' -f6)
+    
+    # Truncate long subjects
+    if [ ${#subject} -gt 80 ]; then
+        subject="${subject:0:77}..."
+    fi
+    
+    echo -e "${BOLD}[$index/$total]${NC} ${YELLOW}${hash:0:8}${NC} ${GREEN}$author${NC} ${DIM}($relative)${NC}"
+    
+    # Show branch/tag info if available
+    if [ -n "$refs" ] && [ "$refs" != " " ]; then
+        echo -e "  ${PURPLE}$refs${NC}"
+    fi
+    
+    echo -e "  ${WHITE}$subject${NC}"
+    echo ""
+}
+
+# Function to show detailed commit view  
+show_commit_detail() {
+    local hash=$1
+    
+    # Validate hash
+    if ! git rev-parse --verify "$hash" >/dev/null 2>&1; then
+        echo "Error: Invalid commit hash: $hash"
+        read -n 1 -s
+        return
+    fi
+    
+    clear
+    echo -e "${BOLD}${CYAN}=== COMMIT DETAILS ===${NC}"
+    echo ""
+    
+    # Show commit info using simpler approach
+    echo -e "${BOLD}Hash:${NC} ${YELLOW}$hash${NC}"
+    echo -e "${BOLD}Author:${NC} ${GREEN}$(git show -s --format='%an <%ae>' "$hash")${NC}"
+    echo -e "${BOLD}Date:${NC} ${BLUE}$(git show -s --format='%ad' --date=format:'%Y-%m-%d %H:%M:%S' "$hash")${NC}"
+    echo -e "${BOLD}Relative:${NC} ${DIM}$(git show -s --format='%ar' "$hash")${NC}"
+    echo -e "${BOLD}Subject:${NC} ${WHITE}$(git show -s --format='%s' "$hash")${NC}"
+    
+    # Show body if it exists
+    local body=$(git show -s --format='%b' "$hash")
+    if [ -n "$body" ] && [ "$body" != "" ]; then
+        echo -e "${BOLD}Body:${NC}"
+        echo -e "${GRAY}$body${NC}"
+    fi
+    
+    echo ""
+    echo -e "${BOLD}${CYAN}=== FILE CHANGES ===${NC}"
+    echo ""
+    
+    # Show file changes
+    if [ "$SHOW_STATS" = true ]; then
+        git show --stat --format="" "$hash" | while IFS= read -r line; do
+            if [ -n "$line" ]; then
+                echo "  $line"
+            fi
+        done
+    else
+        git show --name-status --format="" "$hash" | while IFS= read -r line; do
+            if [ -n "$line" ]; then
+                local status="${line:0:1}"
+                local file="${line:2}"
+                case $status in
+                    M) echo -e "  ${YELLOW}M${NC} $file" ;;
+                    A) echo -e "  ${GREEN}A${NC} $file" ;;
+                    D) echo -e "  ${RED}D${NC} $file" ;;
+                    R*) echo -e "  ${BLUE}R${NC} $file" ;;
+                    *) echo "  $line" ;;
+                esac
+            fi
+        done
+    fi
+    
+    # Check if there are any changes
+    local change_count=$(git show --name-only --format="" "$hash" | wc -l)
+    if [ "$change_count" -eq 0 ]; then
+        echo "  No file changes (merge commit?)"
+    fi
+    
+    echo ""
+    echo -e "${DIM}Press any key to return to timeline, 'q' to quit, 's' to show full diff...${NC}"
+    
+    local key
+    read -n 1 -s key
+    case $key in
+        q|Q)
+            echo ""
+            echo "Goodbye!"
+            exit 0
+            ;;
+        s|S)
+            clear
+            echo -e "${BOLD}${CYAN}=== FULL DIFF ===${NC}"
+            echo "Showing full diff for commit $hash"
+            echo "Press 'q' to return to detail view"
+            echo ""
+            git show "$hash" --color=always | less -R
+            show_commit_detail "$hash"  # Return to detail view after less
+            ;;
+    esac
+}
+
+# Main interactive function
+interactive_timeline() {
+    local git_cmd=$(build_git_command)
+    
+    # Get commit data
+    local format="%H|%an|%ad|%ar|%s|%D"
+    local commits
+    
+    echo "Loading commits..."
+    commits=$(eval "$git_cmd --pretty=format:'$format' --date=format:'%Y-%m-%d %H:%M'")
+    
+    if [ -z "$commits" ]; then
+        echo "No commits found matching your criteria."
+        exit 0
+    fi
+    
+    # Convert to array
+    local commit_array=()
+    while IFS= read -r line; do
+        commit_array+=("$line")
+    done <<< "$commits"
+    
+    local total=${#commit_array[@]}
+    local current=0
+    
+    while true; do
+        clear
+        
+        # Show header
+        echo -e "${BOLD}${CYAN}=== GIT TIMELINE ===${NC}"
+        echo -e "${DIM}Navigate: ↑/k (up), ↓/j (down), Enter (details), q (quit), ? (help)${NC}"
+        echo ""
+        
+        # Show current filters
+        local filters=""
+        [ -n "$AUTHOR" ] && filters="$filters Author: $AUTHOR |"
+        [ -n "$SINCE" ] && filters="$filters Since: $SINCE |"
+        [ -n "$UNTIL" ] && filters="$filters Until: $UNTIL |"
+        [ -n "$FILE_PATH" ] && filters="$filters File: $FILE_PATH |"
+        [ -n "$BRANCH" ] && filters="$filters Branch: $BRANCH |"
+        [ -n "$GREP_PATTERN" ] && filters="$filters Grep: $GREP_PATTERN |"
+        
+        if [ -n "$filters" ]; then
+            echo -e "${DIM}Filters: ${filters%|} ${NC}"
+            echo ""
+        fi
+        
+        # Display commits around current position
+        local start=$((current - 5))
+        local end=$((current + 10))
+        
+        [ $start -lt 0 ] && start=0
+        [ $end -ge $total ] && end=$((total - 1))
+        
+        for i in $(seq $start $end); do
+            local prefix="  "
+            if [ $i -eq $current ]; then
+                prefix="${BOLD}>${NC}"
+            fi
+            
+            echo -n "$prefix "
+            display_commit "${commit_array[$i]}" $((i + 1)) "$total"
+        done
+        
+        if [ $end -lt $((total - 1)) ]; then
+            echo -e "${DIM}  ... and $((total - end - 1)) more commits${NC}"
+        fi
+        
+        echo ""
+        echo -e "${DIM}Showing commit $((current + 1)) of $total${NC}"
+        
+        # Get user input
+        read -n 1 -s key
+        
+        case $key in
+            $'\033')
+                # Handle arrow keys
+                read -n 2 -s rest
+                case $rest in
+                    '[A') # Up arrow
+                        [ $current -gt 0 ] && current=$((current - 1))
+                        ;;
+                    '[B') # Down arrow
+                        [ $current -lt $((total - 1)) ] && current=$((current + 1))
+                        ;;
+                esac
+                ;;
+            k|K) # Up (vim style)
+                [ $current -gt 0 ] && current=$((current - 1))
+                ;;
+            j|J) # Down (vim style)
+                [ $current -lt $((total - 1)) ] && current=$((current + 1))
+                ;;
+            
+            q|Q) # Quit
+                break
+                ;;
+            w|W)
+                clear
+                echo "HELLO!!!!"
+                read -n 1 -s
+                ;;
+            '?') # Help
+                clear
+                echo -e "${BOLD}${CYAN}=== HELP ===${NC}"
+                echo ""
+                echo "Navigation:"
+                echo "  ↑/k       - Move up"
+                echo "  ↓/j       - Move down"
+                echo "  Enter     - Show commit details"
+                echo "  q         - Quit"
+                echo "  ?         - Show this help"
+                echo ""
+                echo "In detail view:"
+                echo "  Any key   - Return to timeline"
+                echo "  s         - Show full diff"
+                echo "  q         - Quit application"
+                echo ""
+                echo "Press any key to continue..."
+                read -n 1 -s
+                ;;
+        esac
+    done
+}
+
+# Show summary of what will be displayed
+echo -e "${BOLD}Git Timeline${NC}"
+echo "Repository: $(git rev-parse --show-toplevel | xargs basename)"
+echo "Current branch: $(git branch --show-current)"
+
+if [ -n "$AUTHOR$SINCE$UNTIL$FILE_PATH$BRANCH$GREP_PATTERN" ]; then
+    echo ""
+    echo "Active filters:"
+    [ -n "$AUTHOR" ] && echo "  Author: $AUTHOR"
+    [ -n "$SINCE" ] && echo "  Since: $SINCE"
+    [ -n "$UNTIL" ] && echo "  Until: $UNTIL"
+    [ -n "$FILE_PATH" ] && echo "  File: $FILE_PATH"
+    [ -n "$BRANCH" ] && echo "  Branch: $BRANCH"
+    [ -n "$GREP_PATTERN" ] && echo "  Grep: $GREP_PATTERN"
+fi
+
+echo ""
+echo "Press any key to start..."
+read -n 1 -s
+
+# Start the interactive timeline
+interactive_timeline
+
+echo ""
+echo "Thanks for using Git Timeline!"\n'|
+            q|Q) # Quit
+                break
+                ;;
+            '?') # Help
+                clear
+                echo -e "${BOLD}${CYAN}=== HELP ===${NC}"
+                echo ""
+                echo "Navigation:"
+                echo "  ↑/k       - Move up"
+                echo "  ↓/j       - Move down"
+                echo "  Enter     - Show commit details"
+                echo "  q         - Quit"
+                echo "  ?         - Show this help"
+                echo ""
+                echo "In detail view:"
+                echo "  Any key   - Return to timeline"
+                echo "  s         - Show full diff"
+                echo "  q         - Quit application"
+                echo ""
+                echo "Press any key to continue..."
+                read -n 1 -s
+                ;;
+        esac
+    done
+}
+
+# Show summary of what will be displayed
+echo -e "${BOLD}Git Timeline${NC}"
+echo "Repository: $(git rev-parse --show-toplevel | xargs basename)"
+echo "Current branch: $(git branch --show-current)"
+
+if [ -n "$AUTHOR$SINCE$UNTIL$FILE_PATH$BRANCH$GREP_PATTERN" ]; then
+    echo ""
+    echo "Active filters:"
+    [ -n "$AUTHOR" ] && echo "  Author: $AUTHOR"
+    [ -n "$SINCE" ] && echo "  Since: $SINCE"
+    [ -n "$UNTIL" ] && echo "  Until: $UNTIL"
+    [ -n "$FILE_PATH" ] && echo "  File: $FILE_PATH"
+    [ -n "$BRANCH" ] && echo "  Branch: $BRANCH"
+    [ -n "$GREP_PATTERN" ] && echo "  Grep: $GREP_PATTERN"
+fi
+
+echo ""
+echo "Press any key to start..."
+read -n 1 -s
+
+# Start the interactive timeline
+interactive_timeline
+
+echo ""
+echo "Thanks for using Git Timeline!" ') # Enter or space - show details
+                local current_line="${commit_array[$current]}"
+                local hash=$(echo "$current_line" | cut -d'|' -f1)
+                # Clean the hash (remove any whitespace)
+                hash=$(echo "$hash" | tr -d ' \t\n\r')
+                show_commit_detail "$hash"
+                ;;
+            q|Q) # Quit
+                break
+                ;;
+            '?') # Help
+                clear
+                echo -e "${BOLD}${CYAN}=== HELP ===${NC}"
+                echo ""
+                echo "Navigation:"
+                echo "  ↑/k       - Move up"
+                echo "  ↓/j       - Move down"
+                echo "  Enter     - Show commit details"
+                echo "  q         - Quit"
+                echo "  ?         - Show this help"
+                echo ""
+                echo "In detail view:"
+                echo "  Any key   - Return to timeline"
+                echo "  s         - Show full diff"
+                echo "  q         - Quit application"
+                echo ""
+                echo "Press any key to continue..."
+                read -n 1 -s
+                ;;
+        esac
+    done
+}
+
+# Show summary of what will be displayed
+echo -e "${BOLD}Git Timeline${NC}"
+echo "Repository: $(git rev-parse --show-toplevel | xargs basename)"
+echo "Current branch: $(git branch --show-current)"
+
+if [ -n "$AUTHOR$SINCE$UNTIL$FILE_PATH$BRANCH$GREP_PATTERN" ]; then
+    echo ""
+    echo "Active filters:"
+    [ -n "$AUTHOR" ] && echo "  Author: $AUTHOR"
+    [ -n "$SINCE" ] && echo "  Since: $SINCE"
+    [ -n "$UNTIL" ] && echo "  Until: $UNTIL"
+    [ -n "$FILE_PATH" ] && echo "  File: $FILE_PATH"
+    [ -n "$BRANCH" ] && echo "  Branch: $BRANCH"
+    [ -n "$GREP_PATTERN" ] && echo "  Grep: $GREP_PATTERN"
+fi
+
+echo ""
+echo "Press any key to start..."
+read -n 1 -s
+
+# Start the interactive timeline
+interactive_timeline
+
+echo ""
+echo "Thanks for using Git Timeline!"
