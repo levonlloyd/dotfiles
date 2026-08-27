@@ -49,13 +49,16 @@ SentinelOne, …) are not tracked here — only `com.levon.*`.
 separate `claude-skills` repo — clone that first or the job fails every five
 minutes against a missing script.
 
+All snippets here are **fish** — this repo's shell. fish has no `$UID`, hence
+`(id -u)`, and its loops end with `end` rather than `done`.
+
 Install:
 
 ```
 $ stow -t ~ launchd
-$ for p in ~/Library/LaunchAgents/com.levon.*.plist; do
-      launchctl bootstrap gui/$UID "$p"
-  done
+$ for p in ~/Library/LaunchAgents/com.levon.*.plist
+      launchctl bootstrap gui/(id -u) $p
+  end
 ```
 
 LaunchAgents fire at **login**, not at power-on — they need a user session.
@@ -65,10 +68,38 @@ The plists hardcode `/opt/homebrew/bin` in `PATH` and `/Users/levon` in
 absolute paths; both need editing on an Intel Mac or under a different
 username.
 
+### On a machine that already has these plists
+
+`stow` aborts when the target exists as a real file, which is the case on any
+machine set up before this package existed:
+
+```
+cannot stow ... over existing target ... since neither a link nor a directory
+```
+
+Do **not** fix that with `stow --adopt`. Adopt moves the live file *into* the
+repo and then links to it, overwriting the tracked version with whatever the
+machine happens to have — silently reverting any improvement made here. Unload,
+delete, then stow:
+
+```
+$ for l in tmux check-review-requests eod-reminder
+      launchctl bootout gui/(id -u)/com.levon.$l
+  end
+$ rm ~/Library/LaunchAgents/com.levon.{tmux,check-review-requests,eod-reminder}.plist
+$ stow -t ~ launchd
+$ for p in ~/Library/LaunchAgents/com.levon.*.plist
+      launchctl bootstrap gui/(id -u) $p
+  end
+```
+
+Safe to run while attached to tmux — booting out `com.levon.tmux` does not
+touch the running server, only what happens at next login.
+
 Check them:
 
 ```
-$ launchctl print gui/$UID/com.levon.tmux        # state, run count, last exit code
+$ launchctl print gui/(id -u)/com.levon.tmux        # state, run count, last exit code
 $ tmux ls
 $ cat ~/Library/Logs/tmux-launchd.err.log
 $ cat /tmp/check-review-requests.log
@@ -77,6 +108,6 @@ $ cat /tmp/check-review-requests.log
 Reload after editing a plist:
 
 ```
-$ launchctl bootout gui/$UID/com.levon.tmux
-$ launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.levon.tmux.plist
+$ launchctl bootout gui/(id -u)/com.levon.tmux
+$ launchctl bootstrap gui/(id -u) ~/Library/LaunchAgents/com.levon.tmux.plist
 ```
