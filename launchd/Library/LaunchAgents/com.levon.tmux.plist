@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.levon.tmux</string>
+
+    <!-- has-session guard makes this idempotent. Bare `new-session -d`
+         exits 1 with "duplicate session" on a second run, and
+         `new-session -A -d` is worse: with -A tmux tries to attach and
+         dies on "open terminal failed" because launchd gives it no tty. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <string>-c</string>
+        <string>tmux has-session -t _persistent 2>/dev/null || tmux new-session -d -s _persistent</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Deliberately no KeepAlive: the tmux client exits as soon as the
+         server has daemonized, and launchd would read that as a crash
+         and respawn in a loop. -->
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/levon/Library/Logs/tmux-launchd.err.log</string>
+    <key>StandardOutPath</key>
+    <string>/Users/levon/Library/Logs/tmux-launchd.out.log</string>
+</dict>
+</plist>
