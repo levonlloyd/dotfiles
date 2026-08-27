@@ -33,32 +33,48 @@ then use GNU stow to create symlinks
 $ stow .
 ```
 
-## macOS: start the tmux server at login
+## macOS: LaunchAgents
 
-The `launchd` package ships `com.levon.tmux`, a LaunchAgent that brings up a
-detached `_persistent` session so a tmux server is always running in the
-background.
+The `launchd` package ships the personal agents under
+`~/Library/LaunchAgents`. Vendor and MDM plists (Homebrew, Google, Rippling,
+SentinelOne, …) are not tracked here — only `com.levon.*`.
+
+| Label | Trigger | Does |
+| --- | --- | --- |
+| `com.levon.tmux` | at login | starts a detached `_persistent` tmux session so a server is always up |
+| `com.levon.check-review-requests` | every 5 min | runs `~/.claude/hooks/check-review-requests.sh` |
+| `com.levon.eod-reminder` | Mon–Fri 16:45 | notification nagging for the `/eod` shutdown ritual |
+
+`check-review-requests` needs `~/.claude/hooks`, which is a symlink into the
+separate `claude-skills` repo — clone that first or the job fails every five
+minutes against a missing script.
+
+Install:
 
 ```
 $ stow -t ~ launchd
-$ launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.levon.tmux.plist
+$ for p in ~/Library/LaunchAgents/com.levon.*.plist; do
+      launchctl bootstrap gui/$UID "$p"
+  done
 ```
 
-`RunAtLoad` fires at **login**, not at power-on — LaunchAgents need a user
-session. With FileVault on there is no earlier hook worth having anyway.
+LaunchAgents fire at **login**, not at power-on — they need a user session.
+With FileVault on there is no earlier hook worth having anyway.
 
-The plist hardcodes `/opt/homebrew/bin` in `PATH`; on an Intel Mac change that
-to `/usr/local/bin`.
+The plists hardcode `/opt/homebrew/bin` in `PATH` and `/Users/levon` in
+absolute paths; both need editing on an Intel Mac or under a different
+username.
 
-Check it:
+Check them:
 
 ```
-$ launchctl print gui/$UID/com.levon.tmux
+$ launchctl print gui/$UID/com.levon.tmux        # state, run count, last exit code
 $ tmux ls
 $ cat ~/Library/Logs/tmux-launchd.err.log
+$ cat /tmp/check-review-requests.log
 ```
 
-To reload after editing the plist:
+Reload after editing a plist:
 
 ```
 $ launchctl bootout gui/$UID/com.levon.tmux
