@@ -34,6 +34,7 @@ window-save-state = always
 macos-titlebar-style = transparent
 font-family = "JetBrains Mono"
 font-size = 16
+scrollback-limit=1000000
 
 # keybindings
 #  ghostty +list-keybinds
@@ -76,3 +77,4 @@ keybind = cmd+s>e=equalize_splits
 
 # other
 copy-on-select = clipboard
+keybind = shift+enter=text:\\\n\r

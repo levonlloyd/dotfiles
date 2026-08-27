@@ -23,4 +23,8 @@ return {
 		dependencies = { "nvim-lua/plenary.nvim" },
 		opts = { signs = false },
 	},
+	{
+		"nvim-langfuse",
+		dev = true, -- tells lazy to look in the dev.path directory
+	},
 }

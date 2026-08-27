@@ -1,52 +1,92 @@
 return {
-	"nvimtools/none-ls.nvim",
-	dependencies = {
-		"nvimtools/none-ls-extras.nvim",
-		"jayp0521/mason-null-ls.nvim", -- ensure dependencies are installed
-	},
-	config = function()
-		local null_ls = require("null-ls")
-		local formatting = null_ls.builtins.formatting -- to setup formatters
-		local diagnostics = null_ls.builtins.diagnostics -- to setup linters
+	-- Conform: formatting
+	{
+		"stevearc/conform.nvim",
+		event = { "BufReadPre", "BufNewFile" },
 
-		-- Formatters & linters for mason to install
-		require("mason-null-ls").setup({
-			ensure_installed = {
-				"stylua", -- lua formatter
-				"shfmt", -- Shell formatter
-				"checkmake", -- linter for Makefiles
-				"ruff", -- Python linter and formatter
+		opts = {
+			-- Format on save
+			format_on_save = {
+				timeout_ms = 2000,
+				lsp_format = "fallback", -- use LSP only when no formatter is configured
 			},
-			automatic_installation = true,
-		})
 
-		local sources = {
-			diagnostics.checkmake,
-			formatting.prettier.with({ filetypes = { "html", "json", "yaml", "markdown" } }),
-			formatting.stylua,
-			formatting.shfmt.with({ args = { "-i", "4" } }),
-			formatting.terraform_fmt,
-			require("none-ls.formatting.ruff").with({ extra_args = { "--extend-select", "I" } }),
-			require("none-ls.formatting.ruff_format"),
-		}
+			-- Filetype -> formatter(s)
+			formatters_by_ft = {
+				lua = { "stylua" },
 
-		local augroup = vim.api.nvim_create_augroup("LspFormatting", {})
-		null_ls.setup({
-			-- debug = true, -- Enable debug mode. Inspect logs with :NullLsLog.
-			sources = sources,
-			-- you can reuse a shared lspconfig on_attach callback here
-			on_attach = function(client, bufnr)
-				if client.supports_method("textDocument/formatting") then
-					vim.api.nvim_clear_autocmds({ group = augroup, buffer = bufnr })
-					vim.api.nvim_create_autocmd("BufWritePre", {
-						group = augroup,
-						buffer = bufnr,
-						callback = function()
-							vim.lsp.buf.format({ async = false })
-						end,
-					})
-				end
-			end,
-		})
-	end,
+				-- Your old prettier target list
+				html = { "prettier" },
+				json = { "prettier" },
+				yaml = { "prettier" },
+				markdown = { "prettier" },
+
+				sh = { "shfmt" },
+				bash = { "shfmt" },
+				zsh = { "shfmt" },
+
+				terraform = { "terraform_fmt" },
+				tf = { "terraform_fmt" },
+				hcl = { "terraform_fmt" },
+
+				-- Ruff: emulate your "extend-select I" + format
+				python = { "ruff_fix_imports", "ruff_format" }, -- runs sequentially  [oai_citation:1‡GitHub](https://github.com/stevearc/conform.nvim)
+
+				-- oxfmt for JS/TS (+ JSX/TSX)
+				javascript = { "oxfmt" },
+				typescript = { "oxfmt" },
+				javascriptreact = { "oxfmt" },
+				typescriptreact = { "oxfmt" },
+			},
+
+			-- Per-formatter tweaks / custom formatters
+			formatters = {
+				-- shfmt indent = 4 (your old args = { "-i", "4" })
+				shfmt = {
+					append_args = { "-i", "4" },
+				},
+
+				-- Create a "variant" of ruff_fix that always adds your import-select
+				ruff_fix_imports = {
+					inherit = "ruff_fix",
+					append_args = { "--extend-select", "I" },
+				},
+
+				-- Custom formatter: project-local oxfmt via yarn, writes in-place
+				-- oxfmt's --write is the default, included for clarity  [oai_citation:2‡Oxc](https://oxc.rs/docs/guide/usage/formatter/cli.html?utm_source=chatgpt.com)
+				oxfmt = {
+					command = "pnpm",
+					args = { "exec", "oxfmt", "--write", "$FILENAME" },
+					stdin = false,
+				},
+			},
+		},
+
+		config = function(_, opts)
+			require("conform").setup(opts)
+			-- Optional: manual format key
+			vim.keymap.set({ "n", "v" }, "<leader>f", function()
+				require("conform").format({ async = false })
+			end, { desc = "Format" })
+		end,
+	},
+
+	-- Mason auto-install for conform formatters (replacement for mason-null-ls)
+	-- Note: oxfmt is project-local, so not installed via Mason.
+	{
+		"zapling/mason-conform.nvim",
+		dependencies = { "williamboman/mason.nvim", "stevearc/conform.nvim" },
+		config = function()
+			require("mason-conform").setup({
+				ensure_installed = {
+					"stylua",
+					"shfmt",
+					"terraform_fmt",
+					"ruff",
+					"prettier",
+				},
+				automatic_installation = true,
+			})
+		end,
+	},
 }

@@ -1,47 +1,197 @@
 #!/bin/bash
 
-# Get the current username
-USERNAME=$(git config user.name | sed 's/ /-/g')
+# Git script to create a new branch based off the latest main branch
+# Usage: ./git-mb [-c|-s] <branch-suffix>
+# -c: Make a checkpoint commit before switching
+# -s: Stash changes before switching
 
-# Check if a description is provided as command-line arguments
-if [ $# -eq 0 ]; then
-  echo "Usage: $0 <description>"
-  echo "Example: $0 'Fix bug in login form'"
-  exit 1
+set -e
+
+# Function to display usage
+usage() {
+    echo "Usage: $0 [-c|-s] <branch-suffix>"
+    echo "  -c: Make a checkpoint commit with current changes before switching"
+    echo "  -s: Stash current changes before switching"
+    echo "  branch-suffix: The suffix for your new branch name"
+    echo ""
+    echo "Examples:"
+    echo "  $0 feature-login"
+    echo "  $0 -c bug-fix"
+    echo "  $0 -s refactor-api"
+    exit 1
+}
+
+# Function to get your first name (lowercase)
+get_first_name() {
+    # Try to get name from git config
+    local name=$(git config --get user.name 2>/dev/null || echo "")
+    if [ -n "$name" ]; then
+        # Extract first name and convert to lowercase
+        echo "$name" | cut -d' ' -f1 | tr '[:upper:]' '[:lower:]'
+    else
+        # Fallback to username
+        echo "$USER" | tr '[:upper:]' '[:lower:]'
+    fi
+}
+
+# Function to find the main branch
+find_main_branch() {
+    local candidates=("main" "master" "trunk")
+    
+    for branch in "${candidates[@]}"; do
+        if git show-ref --verify --quiet "refs/heads/$branch" 2>/dev/null; then
+            echo "$branch"
+            return 0
+        fi
+    done
+    
+    # If none found locally, check remote
+    for branch in "${candidates[@]}"; do
+        if git show-ref --verify --quiet "refs/remotes/origin/$branch" 2>/dev/null; then
+            echo "$branch"
+            return 0
+        fi
+    done
+    
+    echo "Error: Could not find main branch (tried: main, master, trunk)" >&2
+    exit 1
+}
+
+# Function to check for uncommitted changes
+has_uncommitted_changes() {
+    ! git diff --quiet || ! git diff --cached --quiet
+}
+
+# Function to check for untracked files
+has_untracked_files() {
+    [ -n "$(git ls-files --others --exclude-standard)" ]
+}
+
+# Parse command line arguments
+CHECKPOINT=false
+STASH=false
+BRANCH_SUFFIX=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -c|--checkpoint)
+            CHECKPOINT=true
+            shift
+            ;;
+        -s|--stash)
+            STASH=true
+            shift
+            ;;
+        -h|--help)
+            usage
+            ;;
+        -*)
+            echo "Error: Unknown option $1" >&2
+            usage
+            ;;
+        *)
+            if [ -z "$BRANCH_SUFFIX" ]; then
+                BRANCH_SUFFIX="$1"
+            else
+                echo "Error: Too many arguments" >&2
+                usage
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Check if both -c and -s are specified
+if [ "$CHECKPOINT" = true ] && [ "$STASH" = true ]; then
+    echo "Error: Cannot use both -c and -s flags simultaneously" >&2
+    exit 1
 fi
 
-# Construct the branch name from the description
-BRANCH_DESCRIPTION=$(echo "$*" | sed 's/ /-/g')
+# Check if branch suffix is provided
+if [ -z "$BRANCH_SUFFIX" ]; then
+    echo "Error: Branch suffix is required" >&2
+    usage
+fi
 
-# Create the final branch name
-BRANCH_NAME="${USERNAME}-${BRANCH_DESCRIPTION}"
+# Validate branch suffix (basic git branch name rules)
+if [[ ! "$BRANCH_SUFFIX" =~ ^[a-zA-Z0-9._/-]+$ ]] || [[ "$BRANCH_SUFFIX" =~ ^[.-] ]] || [[ "$BRANCH_SUFFIX" =~ [.-]$ ]]; then
+    echo "Error: Invalid branch name suffix. Use alphanumeric characters, dots, hyphens, underscores, and forward slashes." >&2
+    exit 1
+fi
 
-# Determine the base branch (master or main)
-BASE_BRANCH="master" # Default to master
-if git show-ref --verify --quiet refs/remotes/origin/main 2>/dev/null; then
-  BASE_BRANCH="main"
-elif ! git show-ref --verify --quiet refs/remotes/origin/master 2>/dev/null; then
-    if git show-ref --verify --quiet refs/heads/main 2>/dev/null; then
-        BASE_BRANCH="main"
-    elif ! git show-ref --verify --quiet refs/heads/master 2>/dev/null; then
-        echo "Error: Neither master nor main branch found locally or remotely."
+# Check if we're in a git repository
+if ! git rev-parse --git-dir > /dev/null 2>&1; then
+    echo "Error: Not in a git repository" >&2
+    exit 1
+fi
+
+# Get first name and main branch
+FIRST_NAME=$(get_first_name)
+MAIN_BRANCH=$(find_main_branch)
+NEW_BRANCH="${FIRST_NAME}/${BRANCH_SUFFIX}"
+
+echo "Creating branch: $NEW_BRANCH"
+echo "Based on: $MAIN_BRANCH"
+
+# Check for uncommitted changes
+if has_uncommitted_changes || has_untracked_files; then
+    if [ "$CHECKPOINT" = false ] && [ "$STASH" = false ]; then
+        echo "Error: You have uncommitted changes. Use -c to commit them or -s to stash them." >&2
+        echo ""
+        echo "Uncommitted changes:"
+        git status --porcelain
         exit 1
+    fi
+    
+    if [ "$CHECKPOINT" = true ]; then
+        echo "Making checkpoint commit..."
+        # Add all changes including untracked files
+        git add -A
+        # Create commit with timestamp
+        COMMIT_MSG="Checkpoint commit - $(date '+%Y-%m-%d %H:%M:%S')"
+        git commit -m "$COMMIT_MSG"
+        echo "Checkpoint commit created: $COMMIT_MSG"
+    elif [ "$STASH" = true ]; then
+        echo "Stashing changes..."
+        # Stash both tracked and untracked files
+        git stash push -u -m "Auto-stash before creating branch $NEW_BRANCH"
+        echo "Changes stashed"
     fi
 fi
 
-# Check if a remote is set. If so, fetch from origin/base_branch.
-if git remote | grep -q origin; then
-  git fetch origin "$BASE_BRANCH" 2>/dev/null # Suppress error messages
-  if [ $? -eq 0 ]; then
-    git checkout -b "$BRANCH_NAME" "origin/$BASE_BRANCH"
-  else
-    echo "Warning: Could not fetch from origin/$BASE_BRANCH. Creating branch from local $BASE_BRANCH."
-    git checkout -b "$BRANCH_NAME" "$BASE_BRANCH"
-  fi
+# Fetch latest changes from remote
+echo "Fetching latest changes..."
+git fetch origin
+
+# Switch to main branch and pull latest
+echo "Switching to $MAIN_BRANCH..."
+git checkout "$MAIN_BRANCH"
+
+# Pull latest changes if remote exists
+if git show-ref --verify --quiet "refs/remotes/origin/$MAIN_BRANCH" 2>/dev/null; then
+    echo "Pulling latest changes from origin/$MAIN_BRANCH..."
+    git pull origin "$MAIN_BRANCH"
 else
-  echo "Warning: No remote 'origin' found. Creating branch from local $BASE_BRANCH."
-  git checkout -b "$BRANCH_NAME" "$BASE_BRANCH"
+    echo "No remote branch found for $MAIN_BRANCH, using local branch"
 fi
 
-# Inform the user about the created branch
-echo "Created branch: $BRANCH_NAME"
+# Check if branch already exists
+if git show-ref --verify --quiet "refs/heads/$NEW_BRANCH" 2>/dev/null; then
+    echo "Error: Branch '$NEW_BRANCH' already exists" >&2
+    echo "Existing branches with your prefix:"
+    git branch | grep "^  ${FIRST_NAME}/" || echo "  (none found)"
+    exit 1
+fi
+
+# Create and switch to new branch
+echo "Creating new branch: $NEW_BRANCH"
+git checkout -b "$NEW_BRANCH"
+
+echo ""
+echo "✅ Successfully created and switched to branch: $NEW_BRANCH"
+echo "📍 Based on latest: $MAIN_BRANCH"
+
+if [ "$STASH" = true ]; then
+    echo ""
+    echo "💡 Your changes are stashed. To restore them, run: git stash pop"
+fi

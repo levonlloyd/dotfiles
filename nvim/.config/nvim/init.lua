@@ -23,6 +23,8 @@ require("lazy").setup({
 	require("plugins.lsp"),
 	require("plugins.autocompletions"),
 	require("plugins.autoformatting"),
+	require("plugins.testing"),
+	require("plugins.dap"),
 	require("plugins.alpha"),
 	require("plugins.indent-blankline"),
 	require("plugins.misc"),
@@ -30,4 +32,11 @@ require("lazy").setup({
 	require("plugins.oil"),
 	require("plugins.mini"),
 	require("plugins.copilot"),
+	require("plugins.pi-agent"),
+}, {
+	dev = {
+		path = "~/code/nvim-plugins/", -- path where your dev plugins are located
+		patterns = {}, -- patterns to match plugin names for dev mode
+		fallback = false, -- fallback to git if local plugin not found
+	},
 })

@@ -56,6 +56,12 @@ return {
 					mode = mode or "n"
 					vim.keymap.set(mode, keys, func, { buffer = event.buf, desc = "LSP: " .. desc })
 				end
+				local tsserver_command = function(command, arguments)
+					vim.lsp.buf.execute_command({
+						command = command,
+						arguments = arguments,
+					})
+				end
 
 				-- Jump to the definition of the word under your cursor.
 				--  This is where a variable was first declared, or where a function is defined, etc.
@@ -132,6 +138,33 @@ return {
 						vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled({ bufnr = event.buf }))
 					end, "[T]oggle Inlay [H]ints")
 				end
+
+				if client and client.name == "vtsls" then
+					map("<leader>co", function()
+						tsserver_command("_typescript.organizeImports", { vim.uri_from_bufnr(event.buf) })
+					end, "[C]ode [O]rganize Imports")
+					map("<leader>cM", function()
+						tsserver_command("_typescript.addMissingImports", { vim.uri_from_bufnr(event.buf) })
+					end, "[C]ode Add [M]issing Imports")
+					map("<leader>cU", function()
+						tsserver_command("_typescript.removeUnusedImports", { vim.uri_from_bufnr(event.buf) })
+					end, "[C]ode Remove [U]nused Imports")
+					map("<leader>cR", function()
+						local current_name = vim.api.nvim_buf_get_name(event.buf)
+						local target_name = vim.fn.input("New path: ", current_name, "file")
+						if target_name == nil or target_name == "" or target_name == current_name then
+							return
+						end
+
+						tsserver_command("_typescript.applyRenameFile", {
+							{
+								sourceUri = vim.uri_from_fname(current_name),
+								targetUri = vim.uri_from_fname(target_name),
+							},
+						})
+						vim.cmd.edit(target_name)
+					end, "[C]ode [R]ename File")
+				end
 			end,
 		})
 
@@ -162,6 +195,24 @@ return {
 			--    https://github.com/pmizio/typescript-tools.nvim
 			--
 			-- But for many setups, the LSP (`tsserver`) will work just fine
+
+			vtsls = {
+				settings = {
+					typescript = {
+						tsserver = {
+							-- monorepo blows through the 3072MB default; V8 aborts
+							-- (SIGABRT crash loop) when the heap cap is hit
+							maxTsServerMemory = 8192,
+						},
+					},
+				},
+			},
+			eslint = {
+				settings = {
+					format = false,
+					workingDirectory = { mode = "auto" },
+				},
+			},
 			ruff = {},
 			pylsp = {
 				settings = {
@@ -224,17 +275,57 @@ return {
 		})
 		require("mason-tool-installer").setup({ ensure_installed = ensure_installed })
 
-		require("mason-lspconfig").setup({
-			handlers = {
-				function(server_name)
-					local server = servers[server_name] or {}
-					-- This handles overriding only values explicitly passed
-					-- by the server configuration above. Useful when disabling
-					-- certain features of an LSP (for example, turning off formatting for tsserver)
-					server.capabilities = vim.tbl_deep_extend("force", {}, capabilities, server.capabilities or {})
-					require("lspconfig")[server_name].setup(server)
-				end,
-			},
+		-- mason-lspconfig v2 removed the `handlers` mechanism and auto-enables
+		-- installed servers via vim.lsp.enable; per-server config must be
+		-- registered through vim.lsp.config BEFORE that happens.
+		for server_name, server in pairs(servers) do
+			server.capabilities = vim.tbl_deep_extend("force", {}, capabilities, server.capabilities or {})
+			vim.lsp.config(server_name, server)
+		end
+
+		-- LSP is opt-in per nvim instance: tsserver costs GBs in the monorepo
+		-- and agent-cockpit sessions don't need it. Start with `NVIM_LSP=1 nvim`
+		-- to get the old always-on behavior, or :LspOn / :LspToggle on demand.
+		local lsp_enabled = vim.env.NVIM_LSP == "1"
+		require("mason-lspconfig").setup({ automatic_enable = lsp_enabled })
+
+		local function server_names()
+			local ok, mlc = pcall(require, "mason-lspconfig")
+			local names = ok and mlc.get_installed_servers() or {}
+			return #names > 0 and names or vim.tbl_keys(servers)
+		end
+
+		local function set_lsp(enable)
+			lsp_enabled = enable
+			vim.lsp.enable(server_names(), enable)
+			if not enable then
+				-- belt-and-suspenders: make sure running clients actually die
+				for _, client in ipairs(vim.lsp.get_clients()) do
+					client:stop(true)
+				end
+			end
+			vim.notify("LSP " .. (enable and "enabled" or "disabled"), vim.log.levels.INFO)
+		end
+
+		vim.api.nvim_create_user_command("LspOn", function()
+			set_lsp(true)
+		end, { desc = "Enable LSP in this nvim instance" })
+		vim.api.nvim_create_user_command("LspOff", function()
+			set_lsp(false)
+		end, { desc = "Disable LSP in this nvim instance" })
+		vim.api.nvim_create_user_command("LspToggle", function(opts)
+			if opts.args ~= "" then
+				local name = opts.args
+				local enable = not vim.lsp.is_enabled(name)
+				vim.lsp.enable(name, enable)
+				vim.notify(("LSP %s %s"):format(name, enable and "enabled" or "disabled"), vim.log.levels.INFO)
+			else
+				set_lsp(not lsp_enabled)
+			end
+		end, {
+			nargs = "?",
+			complete = server_names,
+			desc = "Toggle LSP (optionally a single server) in this nvim instance",
 		})
 	end,
 }
